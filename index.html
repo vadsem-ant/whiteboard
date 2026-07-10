@@ -72,6 +72,7 @@
   body.mini #toolbar { display: none; }
   body.mini.showbar #toolbar { display: flex; }
   body.mini #miniToggle, body.mini #barHandle { display: block; }
+  body.mini.showbar #miniToggle { display: none; }
   #toast {
     position: fixed; left: 50%; top: 50%; transform: translate(-50%, -50%);
     background: rgba(28,28,30,.85); color: #fff; font-size: 22px; font-weight: 600;
@@ -97,7 +98,7 @@
   <button id="undoBtn" title="Undo">↩︎</button>
   <button id="clearBtn" title="Clear">🗑</button>
   <div id="spacer"></div>
-  <span id="status">v9</span>
+  <span id="status">v10</span>
   <button id="syncBtn">Sync</button>
   <button id="fsBtn" title="Full screen">⛶</button>
   <button id="gearBtn" title="Settings">⚙️</button>
