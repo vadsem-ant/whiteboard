@@ -81,8 +81,9 @@
   <button id="undoBtn" title="Undo">↩︎</button>
   <button id="clearBtn" title="Clear">🗑</button>
   <div id="spacer"></div>
-  <span id="status">v7</span>
+  <span id="status">v8</span>
   <button id="syncBtn">Sync</button>
+  <button id="fsBtn" title="Full screen">⛶</button>
   <button id="gearBtn" title="Settings">⚙️</button>
 </div>
 <canvas id="board"></canvas>
@@ -286,6 +287,20 @@ document.getElementById("clearBtn").onclick = () => {
 
 // ---------- settings ----------
 const settings = document.getElementById("settings");
+const fsBtn = document.getElementById("fsBtn");
+const docEl = document.documentElement;
+const fsSupported = docEl.requestFullscreen || docEl.webkitRequestFullscreen;
+if (!fsSupported || navigator.standalone) fsBtn.style.display = "none";
+fsBtn.onclick = () => {
+  const fsEl = document.fullscreenElement || document.webkitFullscreenElement;
+  if (fsEl) {
+    (document.exitFullscreen || document.webkitExitFullscreen).call(document);
+  } else {
+    (docEl.requestFullscreen || docEl.webkitRequestFullscreen).call(docEl);
+  }
+};
+document.addEventListener("fullscreenchange", () => { resize(); setTimeout(resize, 350); });
+document.addEventListener("webkitfullscreenchange", () => { resize(); setTimeout(resize, 350); });
 document.getElementById("gearBtn").onclick = () => {
   document.getElementById("repoInp").value = cfg.repo;
   document.getElementById("tokenInp").value = cfg.token;
