@@ -206,7 +206,9 @@ canvas.addEventListener("touchstart", (e) => {
     if (current) { current = null; redraw(); }  // drop accidental stroke from first finger
     tft = { t: Date.now(),
             x: (e.touches[0].clientX + e.touches[1].clientX) / 2,
-            y: (e.touches[0].clientY + e.touches[1].clientY) / 2, moved: false };
+            y: (e.touches[0].clientY + e.touches[1].clientY) / 2, moved: false,
+            sep: Math.hypot(e.touches[0].clientX - e.touches[1].clientX,
+                            e.touches[0].clientY - e.touches[1].clientY) };
   } else if (e.touches.length > 2) tft = null;
 }, { passive: true });
 canvas.addEventListener("touchmove", (e) => {
@@ -217,7 +219,9 @@ canvas.addEventListener("touchmove", (e) => {
   }
 }, { passive: true });
 canvas.addEventListener("touchend", (e) => {
-  if (tft && e.touches.length === 0 && !tft.moved && Date.now() - tft.t < 350) toggleTool();
+  const penRecent = penDown || (Date.now() - lastPenTs < 1500);
+  if (tft && e.touches.length === 0 && !tft.moved && Date.now() - tft.t < 350 &&
+      !penRecent && tft.sep > 45) toggleTool();
   if (e.touches.length === 0) tft = null;
 }, { passive: true });
 
@@ -226,14 +230,28 @@ function ensureSized() {
   const r = canvas.getBoundingClientRect();
   if (Math.abs(canvas.width - r.width * dpr) > 1 || Math.abs(canvas.height - r.height * dpr) > 1) resize();
 }
+let penSeen = localStorage.getItem("wb_pen_seen") === "1";
+let lastPenTs = 0;
+let penDown = false;
+function notePen(ev) {
+  if (ev.pointerType === "pen") {
+    lastPenTs = Date.now();
+    if (!penSeen) { penSeen = true; localStorage.setItem("wb_pen_seen", "1"); }
+  }
+}
 canvas.addEventListener("pointerdown", (ev) => {
-  if (ev.pointerType === "touch" && tool === "pen") return;
+  notePen(ev);
+  // Once a Pencil has ever been used on this device, fingers NEVER draw or
+  // erase — palm contact is fully inert (toolbar still works).
+  if (ev.pointerType === "touch" && (penSeen || tool === "pen")) return;
+  if (ev.pointerType === "pen") penDown = true;
   ensureSized(); // palm rejection: finger pans nothing, pencil draws
   canvas.setPointerCapture(ev.pointerId);
   current = { color, width: baseWidth, eraser: tool === "eraser", pts: [pos(ev)] };
   ev.preventDefault();
 });
 canvas.addEventListener("pointermove", (ev) => {
+  notePen(ev);
   if (!current) return;
   const events = ev.getCoalescedEvents ? ev.getCoalescedEvents() : [ev];
   for (const e of events) current.pts.push(pos(e));
@@ -243,6 +261,7 @@ canvas.addEventListener("pointermove", (ev) => {
   ev.preventDefault();
 });
 function endStroke(ev) {
+  if (ev && ev.pointerType === "pen") { penDown = false; lastPenTs = Date.now(); }
   if (!current) return;
   strokes.push(current);
   current = null;
