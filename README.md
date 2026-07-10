@@ -15,3 +15,9 @@ Draw on an iPad (Apple Pencil, Safari) → tap **Sync** to save the board.
 - Undo removes the last stroke; Clear wipes the board (with confirmation).
 - Multiple boards: change the board name in ⚙️ (e.g. `sketch-1`, `scratch`).
 - Commit history = board history.
+
+## Agent integration
+
+`skills/whiteboard-reader/` is a portable agent skill for reading synced
+boards (for Claude Code: copy into `.claude/skills/`; any other agent: follow
+SKILL.md). Configure `WHITEBOARD_REPO` and a read-only `GITHUB_TOKEN`.
