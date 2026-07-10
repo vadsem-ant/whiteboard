@@ -203,6 +203,7 @@ function toggleTool() {
 let tft = null;
 canvas.addEventListener("touchstart", (e) => {
   if (e.touches.length === 2) {
+    if (current) { current = null; redraw(); }  // drop accidental stroke from first finger
     tft = { t: Date.now(),
             x: (e.touches[0].clientX + e.touches[1].clientX) / 2,
             y: (e.touches[0].clientY + e.touches[1].clientY) / 2, moved: false };
