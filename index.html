@@ -1,0 +1,323 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<title>Whiteboard</title>
+<style>
+  :root { --bar-h: 52px; }
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  html, body { height: 100%; overflow: hidden; overscroll-behavior: none;
+    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif; }
+  #toolbar {
+    position: fixed; top: 0; left: 0; right: 0; height: var(--bar-h);
+    display: flex; align-items: center; gap: 8px; padding: 0 10px;
+    background: #1c1c1e; color: #eee; z-index: 10;
+    padding-top: env(safe-area-inset-top);
+    height: calc(var(--bar-h) + env(safe-area-inset-top));
+  }
+  #toolbar button, #toolbar select {
+    height: 36px; min-width: 36px; border: none; border-radius: 8px;
+    background: #3a3a3c; color: #eee; font-size: 15px; padding: 0 10px;
+    touch-action: manipulation;
+  }
+  #toolbar button.active { background: #0a84ff; }
+  .swatch { width: 28px; height: 28px; border-radius: 50%; border: 2px solid transparent;
+    flex: none; touch-action: manipulation; }
+  .swatch.active { border-color: #fff; }
+  #spacer { flex: 1; }
+  #status { font-size: 12px; color: #98989d; max-width: 200px; white-space: nowrap;
+    overflow: hidden; text-overflow: ellipsis; }
+  #syncBtn { background: #0a84ff; font-weight: 600; }
+  #syncBtn.dirty { background: #ff9f0a; }
+  #board { position: fixed; top: calc(var(--bar-h) + env(safe-area-inset-top));
+    left: 0; right: 0; bottom: 0; touch-action: none; background: #fff; }
+  #settings {
+    position: fixed; inset: 0; background: rgba(0,0,0,.55); z-index: 20;
+    display: none; align-items: center; justify-content: center;
+  }
+  #settings.open { display: flex; }
+  #settings .panel {
+    background: #2c2c2e; color: #eee; border-radius: 14px; padding: 22px;
+    width: min(440px, 92vw); display: flex; flex-direction: column; gap: 12px;
+  }
+  #settings label { font-size: 13px; color: #98989d; }
+  #settings input {
+    width: 100%; height: 40px; border-radius: 8px; border: 1px solid #48484a;
+    background: #1c1c1e; color: #eee; padding: 0 10px; font-size: 15px;
+  }
+  #settings .row { display: flex; gap: 10px; justify-content: flex-end; }
+  #settings button { height: 38px; padding: 0 16px; border: none; border-radius: 8px;
+    background: #0a84ff; color: #fff; font-size: 15px; }
+  #settings button.secondary { background: #3a3a3c; }
+</style>
+</head>
+<body>
+<div id="toolbar">
+  <button id="penBtn" class="active" title="Pen">✏️</button>
+  <button id="eraserBtn" title="Eraser">◻️</button>
+  <div class="swatch active" data-color="#111111" style="background:#111111"></div>
+  <div class="swatch" data-color="#d70015" style="background:#d70015"></div>
+  <div class="swatch" data-color="#0a84ff" style="background:#0a84ff"></div>
+  <div class="swatch" data-color="#1db954" style="background:#1db954"></div>
+  <select id="widthSel">
+    <option value="2">Fine</option>
+    <option value="3.5" selected>Medium</option>
+    <option value="7">Thick</option>
+  </select>
+  <button id="undoBtn" title="Undo">↩︎</button>
+  <button id="clearBtn" title="Clear">🗑</button>
+  <div id="spacer"></div>
+  <span id="status"></span>
+  <button id="syncBtn">Sync</button>
+  <button id="gearBtn" title="Settings">⚙️</button>
+</div>
+<canvas id="board"></canvas>
+
+<div id="settings">
+  <div class="panel">
+    <b>Sync settings</b>
+    <label>GitHub repo (owner/name)</label>
+    <input id="repoInp" placeholder="vadsem-ant/whiteboard-boards" autocapitalize="none">
+    <label>Fine-grained PAT (Contents: read/write on that repo only)</label>
+    <input id="tokenInp" type="password" placeholder="github_pat_..." autocapitalize="none">
+    <label>Board name</label>
+    <input id="boardInp" placeholder="board" autocapitalize="none">
+    <div class="row">
+      <button class="secondary" id="closeSettings">Cancel</button>
+      <button id="saveSettings">Save</button>
+    </div>
+  </div>
+</div>
+
+<script>
+"use strict";
+// ---------- state ----------
+const cfg = {
+  repo:  localStorage.getItem("wb_repo")  || "vadsem-ant/whiteboard-boards",
+  token: localStorage.getItem("wb_token") || "",
+  board: localStorage.getItem("wb_board") || "board",
+};
+let strokes = [];        // [{color, width, eraser, pts:[[x,y,p],...]}]
+let current = null;
+let tool = "pen";
+let color = "#111111";
+let baseWidth = 3.5;
+let dirty = false;
+let remoteSha = { json: null, png: null };
+
+const canvas = document.getElementById("board");
+const ctx = canvas.getContext("2d");
+const statusEl = document.getElementById("status");
+const syncBtn = document.getElementById("syncBtn");
+
+// ---------- canvas sizing ----------
+function resize() {
+  const dpr = window.devicePixelRatio || 1;
+  const r = canvas.getBoundingClientRect();
+  canvas.width = r.width * dpr;
+  canvas.height = r.height * dpr;
+  ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+  redraw();
+}
+window.addEventListener("resize", resize);
+
+// ---------- drawing ----------
+function drawStroke(s) {
+  if (!s.pts.length) return;
+  ctx.save();
+  ctx.globalCompositeOperation = s.eraser ? "destination-out" : "source-over";
+  ctx.strokeStyle = s.color;
+  ctx.lineCap = "round";
+  ctx.lineJoin = "round";
+  if (s.pts.length === 1) {
+    const [x, y, p] = s.pts[0];
+    ctx.beginPath();
+    ctx.arc(x, y, (s.width * (0.4 + p)) / 2, 0, Math.PI * 2);
+    ctx.fillStyle = s.color;
+    ctx.fill();
+    ctx.restore();
+    return;
+  }
+  for (let i = 1; i < s.pts.length; i++) {
+    const [x0, y0, p0] = s.pts[i - 1];
+    const [x1, y1, p1] = s.pts[i];
+    ctx.beginPath();
+    ctx.lineWidth = s.eraser ? s.width * 6 : s.width * (0.4 + (p0 + p1) / 2);
+    ctx.moveTo(x0, y0);
+    ctx.lineTo(x1, y1);
+    ctx.stroke();
+  }
+  ctx.restore();
+}
+function redraw() {
+  const r = canvas.getBoundingClientRect();
+  ctx.clearRect(0, 0, r.width, r.height);
+  for (const s of strokes) drawStroke(s);
+}
+
+// ---------- pointer input ----------
+function pos(ev) {
+  const r = canvas.getBoundingClientRect();
+  const p = (ev.pointerType === "pen" && ev.pressure > 0) ? ev.pressure : 0.6;
+  return [+(ev.clientX - r.left).toFixed(1), +(ev.clientY - r.top).toFixed(1), +p.toFixed(2)];
+}
+canvas.addEventListener("pointerdown", (ev) => {
+  if (ev.pointerType === "touch" && tool === "pen") return; // palm rejection: finger pans nothing, pencil draws
+  canvas.setPointerCapture(ev.pointerId);
+  current = { color, width: baseWidth, eraser: tool === "eraser", pts: [pos(ev)] };
+  ev.preventDefault();
+});
+canvas.addEventListener("pointermove", (ev) => {
+  if (!current) return;
+  const events = ev.getCoalescedEvents ? ev.getCoalescedEvents() : [ev];
+  for (const e of events) current.pts.push(pos(e));
+  // incremental draw of the new tail
+  const tail = { ...current, pts: current.pts.slice(-events.length - 1) };
+  drawStroke(tail);
+  ev.preventDefault();
+});
+function endStroke(ev) {
+  if (!current) return;
+  strokes.push(current);
+  current = null;
+  setDirty(true);
+}
+canvas.addEventListener("pointerup", endStroke);
+canvas.addEventListener("pointercancel", endStroke);
+
+// ---------- toolbar ----------
+const penBtn = document.getElementById("penBtn");
+const eraserBtn = document.getElementById("eraserBtn");
+penBtn.onclick = () => { tool = "pen"; penBtn.classList.add("active"); eraserBtn.classList.remove("active"); };
+eraserBtn.onclick = () => { tool = "eraser"; eraserBtn.classList.add("active"); penBtn.classList.remove("active"); };
+document.querySelectorAll(".swatch").forEach((el) => {
+  el.onclick = () => {
+    document.querySelectorAll(".swatch").forEach((s) => s.classList.remove("active"));
+    el.classList.add("active");
+    color = el.dataset.color;
+    tool = "pen"; penBtn.classList.add("active"); eraserBtn.classList.remove("active");
+  };
+});
+document.getElementById("widthSel").onchange = (e) => { baseWidth = +e.target.value; };
+document.getElementById("undoBtn").onclick = () => { strokes.pop(); redraw(); setDirty(true); };
+document.getElementById("clearBtn").onclick = () => {
+  if (strokes.length && !confirm("Clear the whole board?")) return;
+  strokes = []; redraw(); setDirty(true);
+};
+
+// ---------- settings ----------
+const settings = document.getElementById("settings");
+document.getElementById("gearBtn").onclick = () => {
+  document.getElementById("repoInp").value = cfg.repo;
+  document.getElementById("tokenInp").value = cfg.token;
+  document.getElementById("boardInp").value = cfg.board;
+  settings.classList.add("open");
+};
+document.getElementById("closeSettings").onclick = () => settings.classList.remove("open");
+document.getElementById("saveSettings").onclick = () => {
+  cfg.repo = document.getElementById("repoInp").value.trim() || cfg.repo;
+  cfg.token = document.getElementById("tokenInp").value.trim();
+  cfg.board = document.getElementById("boardInp").value.trim() || "board";
+  localStorage.setItem("wb_repo", cfg.repo);
+  localStorage.setItem("wb_token", cfg.token);
+  localStorage.setItem("wb_board", cfg.board);
+  settings.classList.remove("open");
+  loadBoard();
+};
+
+// ---------- GitHub sync ----------
+function setStatus(msg) { statusEl.textContent = msg; }
+function setDirty(d) {
+  dirty = d;
+  syncBtn.classList.toggle("dirty", d);
+  syncBtn.textContent = d ? "Sync ●" : "Sync";
+}
+function api(path, opts = {}) {
+  return fetch(`https://api.github.com/repos/${cfg.repo}/${path}`, {
+    ...opts,
+    headers: {
+      Authorization: `Bearer ${cfg.token}`,
+      Accept: "application/vnd.github+json",
+      ...(opts.headers || {}),
+    },
+  });
+}
+async function getSha(path) {
+  const r = await api(`contents/${path}?ref=main&t=${Date.now()}`, { cache: "no-store" });
+  if (r.status === 404) return null;
+  if (!r.ok) throw new Error(`GET ${path}: ${r.status}`);
+  return (await r.json()).sha;
+}
+async function putFile(path, base64Content, sha, message) {
+  const body = { message, content: base64Content, branch: "main" };
+  if (sha) body.sha = sha;
+  const r = await api(`contents/${path}`, { method: "PUT", body: JSON.stringify(body) });
+  if (!r.ok) throw new Error(`PUT ${path}: ${r.status} ${(await r.text()).slice(0, 120)}`);
+  return (await r.json()).content.sha;
+}
+function canvasPNG() {
+  // export on white background
+  const out = document.createElement("canvas");
+  out.width = canvas.width; out.height = canvas.height;
+  const octx = out.getContext("2d");
+  octx.fillStyle = "#fff";
+  octx.fillRect(0, 0, out.width, out.height);
+  octx.drawImage(canvas, 0, 0);
+  return out.toDataURL("image/png").split(",")[1];
+}
+async function sync() {
+  if (!cfg.token) { settings.classList.add("open"); return; }
+  syncBtn.disabled = true;
+  setStatus("syncing…");
+  try {
+    const stamp = new Date().toISOString().replace(/[:.]/g, "-").slice(0, 19);
+    const meta = {
+      board: cfg.board, updated: new Date().toISOString(),
+      viewport: canvas.getBoundingClientRect(),
+      dpr: window.devicePixelRatio || 1, strokes,
+    };
+    const jsonB64 = btoa(unescape(encodeURIComponent(JSON.stringify(meta))));
+    remoteSha.json = await putFile(`boards/${cfg.board}.json`, jsonB64,
+      await getSha(`boards/${cfg.board}.json`), `${cfg.board}: strokes @ ${stamp}`);
+    remoteSha.png = await putFile(`boards/${cfg.board}.png`, canvasPNG(),
+      await getSha(`boards/${cfg.board}.png`), `${cfg.board}: png @ ${stamp}`);
+    setDirty(false);
+    setStatus(`synced ${new Date().toLocaleTimeString()}`);
+  } catch (e) {
+    setStatus(`sync failed: ${e.message}`);
+  } finally {
+    syncBtn.disabled = false;
+  }
+}
+syncBtn.onclick = sync;
+
+async function loadBoard() {
+  if (!cfg.token) return;
+  setStatus("loading…");
+  try {
+    const r = await api(`contents/boards/${cfg.board}.json?ref=main&t=${Date.now()}`, {
+      cache: "no-store",
+      headers: { Accept: "application/vnd.github.raw+json" },
+    });
+    if (r.status === 404) { setStatus("new board"); return; }
+    if (!r.ok) throw new Error(`load: ${r.status}`);
+    const meta = await r.json();
+    strokes = meta.strokes || [];
+    redraw();
+    setDirty(false);
+    setStatus(`loaded (${strokes.length} strokes)`);
+  } catch (e) {
+    setStatus(`load failed: ${e.message}`);
+  }
+}
+
+// ---------- boot ----------
+resize();
+loadBoard();
+window.addEventListener("beforeunload", (e) => { if (dirty) e.preventDefault(); });
+</script>
+</body>
+</html>
