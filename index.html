@@ -51,6 +51,13 @@
   #settings button { height: 38px; padding: 0 16px; border: none; border-radius: 8px;
     background: #0a84ff; color: #fff; font-size: 15px; }
   #settings button.secondary { background: #3a3a3c; }
+  #toast {
+    position: fixed; left: 50%; top: 50%; transform: translate(-50%, -50%);
+    background: rgba(28,28,30,.85); color: #fff; font-size: 22px; font-weight: 600;
+    padding: 14px 26px; border-radius: 14px; z-index: 15; pointer-events: none;
+    opacity: 0; transition: opacity .15s;
+  }
+  #toast.show { opacity: 1; }
 </style>
 </head>
 <body>
@@ -74,6 +81,7 @@
   <button id="gearBtn" title="Settings">⚙️</button>
 </div>
 <canvas id="board"></canvas>
+<div id="toast"></div>
 
 <div id="settings">
   <div class="panel">
@@ -174,6 +182,44 @@ function pos(ev) {
   const y = (ev.clientY - r.top) * sy;
   return [+x.toFixed(1), +y.toFixed(1), +p.toFixed(2)];
 }
+let toastTimer = null;
+function toast(msg) {
+  const t = document.getElementById("toast");
+  t.textContent = msg;
+  t.classList.add("show");
+  clearTimeout(toastTimer);
+  toastTimer = setTimeout(() => t.classList.remove("show"), 550);
+}
+function setTool(t) {
+  tool = t;
+  penBtn.classList.toggle("active", t === "pen");
+  eraserBtn.classList.toggle("active", t === "eraser");
+}
+function toggleTool() {
+  setTool(tool === "pen" ? "eraser" : "pen");
+  toast(tool === "pen" ? "✏️ Pen" : "◻️ Eraser");
+}
+// two-finger tap: quick, no movement -> toggle pen/eraser
+let tft = null;
+canvas.addEventListener("touchstart", (e) => {
+  if (e.touches.length === 2) {
+    tft = { t: Date.now(),
+            x: (e.touches[0].clientX + e.touches[1].clientX) / 2,
+            y: (e.touches[0].clientY + e.touches[1].clientY) / 2, moved: false };
+  } else if (e.touches.length > 2) tft = null;
+}, { passive: true });
+canvas.addEventListener("touchmove", (e) => {
+  if (tft && e.touches.length === 2) {
+    const x = (e.touches[0].clientX + e.touches[1].clientX) / 2;
+    const y = (e.touches[0].clientY + e.touches[1].clientY) / 2;
+    if (Math.hypot(x - tft.x, y - tft.y) > 24) tft.moved = true;
+  }
+}, { passive: true });
+canvas.addEventListener("touchend", (e) => {
+  if (tft && e.touches.length === 0 && !tft.moved && Date.now() - tft.t < 350) toggleTool();
+  if (e.touches.length === 0) tft = null;
+}, { passive: true });
+
 function ensureSized() {
   const dpr = window.devicePixelRatio || 1;
   const r = canvas.getBoundingClientRect();
@@ -207,14 +253,14 @@ canvas.addEventListener("pointercancel", endStroke);
 // ---------- toolbar ----------
 const penBtn = document.getElementById("penBtn");
 const eraserBtn = document.getElementById("eraserBtn");
-penBtn.onclick = () => { tool = "pen"; penBtn.classList.add("active"); eraserBtn.classList.remove("active"); };
-eraserBtn.onclick = () => { tool = "eraser"; eraserBtn.classList.add("active"); penBtn.classList.remove("active"); };
+penBtn.onclick = () => setTool("pen");
+eraserBtn.onclick = () => setTool("eraser");
 document.querySelectorAll(".swatch").forEach((el) => {
   el.onclick = () => {
     document.querySelectorAll(".swatch").forEach((s) => s.classList.remove("active"));
     el.classList.add("active");
     color = el.dataset.color;
-    tool = "pen"; penBtn.classList.add("active"); eraserBtn.classList.remove("active");
+    setTool("pen");
   };
 });
 document.getElementById("widthSel").onchange = (e) => { baseWidth = +e.target.value; };
