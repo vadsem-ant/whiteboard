@@ -71,8 +71,15 @@
   }
   body.mini #toolbar { display: none; }
   body.mini.showbar #toolbar { display: flex; }
-  body.mini #miniToggle, body.mini #barHandle { display: block; }
-  body.mini.showbar #miniToggle { display: none; }
+  #miniSync {
+    position: fixed; top: calc(66px + env(safe-area-inset-top)); right: 14px;
+    z-index: 12; width: 48px; height: 48px; border-radius: 50%;
+    background: rgba(10,132,255,.9); color: #fff; font-size: 20px; border: none;
+    display: none; touch-action: manipulation;
+  }
+  #miniSync.dirty { background: rgba(255,159,10,.95); }
+  body.mini #miniToggle, body.mini #barHandle, body.mini #miniSync { display: block; }
+  body.mini.showbar #miniToggle, body.mini.showbar #miniSync { display: none; }
   #toast {
     position: fixed; left: 50%; top: 50%; transform: translate(-50%, -50%);
     background: rgba(28,28,30,.85); color: #fff; font-size: 22px; font-weight: 600;
@@ -98,7 +105,7 @@
   <button id="undoBtn" title="Undo">↩︎</button>
   <button id="clearBtn" title="Clear">🗑</button>
   <div id="spacer"></div>
-  <span id="status">v10</span>
+  <span id="status">v11</span>
   <button id="syncBtn">Sync</button>
   <button id="fsBtn" title="Full screen">⛶</button>
   <button id="gearBtn" title="Settings">⚙️</button>
@@ -106,6 +113,7 @@
 <canvas id="board"></canvas>
 <div id="toast"></div>
 <button id="miniToggle">✏️</button>
+<button id="miniSync">↑</button>
 <button id="barHandle"></button>
 
 <div id="settings">
@@ -238,7 +246,8 @@ document.addEventListener("selectstart", (e) => {
 document.body.addEventListener("touchstart", (e) => {
   // outside toolbar/settings, no finger touch does anything
   if (!e.target.closest("#toolbar") && !e.target.closest("#settings") &&
-      !e.target.closest("#miniToggle") && !e.target.closest("#barHandle")) e.preventDefault();
+      !e.target.closest("#miniToggle") && !e.target.closest("#barHandle") &&
+      !e.target.closest("#miniSync")) e.preventDefault();
 }, { passive: false });
 document.addEventListener("selectionchange", () => {
   const s = document.getSelection();
@@ -326,6 +335,7 @@ fsBtn.onclick = () => {
 const miniToggle = document.getElementById("miniToggle");
 const barHandle = document.getElementById("barHandle");
 miniToggle.onclick = () => toggleTool();
+document.getElementById("miniSync").onclick = sync;
 barHandle.onclick = () => { document.body.classList.toggle("showbar"); resize(); };
 function onFsChange() {
   const fs = !!(document.fullscreenElement || document.webkitFullscreenElement);
@@ -359,6 +369,7 @@ function setDirty(d) {
   dirty = d;
   syncBtn.classList.toggle("dirty", d);
   syncBtn.textContent = d ? "Sync ●" : "Sync";
+  document.getElementById("miniSync").classList.toggle("dirty", d);
 }
 function api(path, opts = {}) {
   return fetch(`https://api.github.com/repos/${cfg.repo}/${path}`, {
