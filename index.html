@@ -107,7 +107,7 @@
   <button id="undoBtn" title="Undo">↩︎</button>
   <button id="clearBtn" title="Clear">🗑</button>
   <div id="spacer"></div>
-  <span id="status">v12</span>
+  <span id="status">v13</span>
   <button id="syncBtn">Sync</button>
   <button id="fsBtn" title="Full screen">⛶</button>
   <button id="gearBtn" title="Settings">⚙️</button>
@@ -122,7 +122,7 @@
   <div class="panel">
     <b>Sync settings</b>
     <label>GitHub repo (owner/name)</label>
-    <input id="repoInp" placeholder="vadsem-ant/whiteboard-boards" autocapitalize="none">
+    <input id="repoInp" placeholder="owner/repo (private recommended)" autocapitalize="none">
     <label>Fine-grained PAT (Contents: read/write on that repo only)</label>
     <input id="tokenInp" type="password" placeholder="github_pat_..." autocapitalize="none">
     <label>Board name</label>
@@ -138,7 +138,7 @@
 "use strict";
 // ---------- state ----------
 const cfg = {
-  repo:  localStorage.getItem("wb_repo")  || "vadsem-ant/whiteboard-boards",
+  repo:  localStorage.getItem("wb_repo")  || "",
   token: localStorage.getItem("wb_token") || "",
   board: localStorage.getItem("wb_board") || "board",
 };
@@ -431,7 +431,7 @@ document.getElementById("gearBtn").onclick = () => {
 };
 document.getElementById("closeSettings").onclick = () => settings.classList.remove("open");
 document.getElementById("saveSettings").onclick = () => {
-  cfg.repo = document.getElementById("repoInp").value.trim() || cfg.repo;
+  cfg.repo = document.getElementById("repoInp").value.trim();
   cfg.token = document.getElementById("tokenInp").value.trim();
   cfg.board = document.getElementById("boardInp").value.trim() || "board";
   localStorage.setItem("wb_repo", cfg.repo);
@@ -501,7 +501,7 @@ function canvasPNG() {
 }
 
 async function sync() {
-  if (!cfg.token) { settings.classList.add("open"); return; }
+  if (!cfg.token || !cfg.repo) { settings.classList.add("open"); return; }
   syncBtn.disabled = true;
   setStatus("syncing…");
   try {
@@ -527,7 +527,7 @@ async function sync() {
 syncBtn.onclick = sync;
 
 async function loadBoard() {
-  if (!cfg.token) return;
+  if (!cfg.token || !cfg.repo) { setStatus("set repo in ⚙️"); return; }
   setStatus("loading…");
   try {
     const r = await api(`contents/boards/${cfg.board}.json?ref=main&t=${Date.now()}`, {

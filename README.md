@@ -3,8 +3,8 @@
 Draw on an iPad (Apple Pencil, Safari) → tap **Sync** to save the board.
 
 - **App**: https://vadsem-ant.github.io/whiteboard/ (add to Home Screen for full-screen)
-- **Boards**: saved to `boards/<name>.png` + `.json` in the **private** repo `vadsem-ant/whiteboard-boards`
-- **Auth**: the page needs a fine-grained PAT with *Contents: read & write* on **vadsem-ant/whiteboard-boards** (the private data repo) only
+- **Boards**: saved to `boards/<name>.png` + `.json` in a data repo you choose (a **private** repo is recommended)
+- **Setup**: in the ⚙️ panel set your data repo (`owner/repo`) and a fine-grained PAT with *Contents: read & write* on that repo only
   (Settings → Developer settings → Fine-grained tokens). Enter it once via the ⚙️ panel; it is
   stored in the browser's localStorage.
 
