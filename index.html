@@ -8,7 +8,10 @@
 <title>Whiteboard</title>
 <style>
   :root { --bar-h: 52px; }
-  * { margin: 0; padding: 0; box-sizing: border-box; }
+  * { margin: 0; padding: 0; box-sizing: border-box;
+    -webkit-user-select: none; user-select: none;
+    -webkit-touch-callout: none; }
+  input { -webkit-user-select: text; user-select: text; }
   html, body { height: 100%; overflow: hidden; overscroll-behavior: none;
     font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif; }
   #toolbar {
@@ -199,32 +202,13 @@ function toggleTool() {
   setTool(tool === "pen" ? "eraser" : "pen");
   toast(tool === "pen" ? "✏️ Pen" : "◻️ Eraser");
 }
-// two-finger tap: quick, no movement -> toggle pen/eraser
-let tft = null;
-canvas.addEventListener("touchstart", (e) => {
-  if (e.touches.length === 2) {
-    if (current) { current = null; redraw(); }  // drop accidental stroke from first finger
-    tft = { t: Date.now(),
-            x: (e.touches[0].clientX + e.touches[1].clientX) / 2,
-            y: (e.touches[0].clientY + e.touches[1].clientY) / 2, moved: false,
-            sep: Math.hypot(e.touches[0].clientX - e.touches[1].clientX,
-                            e.touches[0].clientY - e.touches[1].clientY) };
-  } else if (e.touches.length > 2) tft = null;
-}, { passive: true });
-canvas.addEventListener("touchmove", (e) => {
-  if (tft && e.touches.length === 2) {
-    const x = (e.touches[0].clientX + e.touches[1].clientX) / 2;
-    const y = (e.touches[0].clientY + e.touches[1].clientY) / 2;
-    if (Math.hypot(x - tft.x, y - tft.y) > 24) tft.moved = true;
-  }
-}, { passive: true });
-canvas.addEventListener("touchend", (e) => {
-  const penRecent = penDown || (Date.now() - lastPenTs < 1500);
-  if (tft && e.touches.length === 0 && !tft.moved && Date.now() - tft.t < 350 &&
-      !penRecent && tft.sep > 45) toggleTool();
-  if (e.touches.length === 0) tft = null;
-}, { passive: true });
-
+canvas.addEventListener("touchstart", (e) => e.preventDefault(), { passive: false });
+canvas.addEventListener("touchmove", (e) => e.preventDefault(), { passive: false });
+canvas.addEventListener("contextmenu", (e) => e.preventDefault());
+document.addEventListener("selectionchange", () => {
+  const s = document.getSelection();
+  if (s && !s.isCollapsed) s.removeAllRanges();
+});
 function ensureSized() {
   const dpr = window.devicePixelRatio || 1;
   const r = canvas.getBoundingClientRect();
