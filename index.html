@@ -32,8 +32,7 @@
     overflow: hidden; text-overflow: ellipsis; }
   #syncBtn { background: #0a84ff; font-weight: 600; }
   #syncBtn.dirty { background: #ff9f0a; }
-  #board { position: fixed; top: calc(var(--bar-h) + env(safe-area-inset-top));
-    left: 0; right: 0; bottom: 0; touch-action: none; background: #fff; }
+  #board { position: fixed; left: 0; touch-action: none; background: #fff; }
   #settings {
     position: fixed; inset: 0; background: rgba(0,0,0,.55); z-index: 20;
     display: none; align-items: center; justify-content: center;
@@ -116,9 +115,15 @@ const syncBtn = document.getElementById("syncBtn");
 // ---------- canvas sizing ----------
 function resize() {
   const dpr = window.devicePixelRatio || 1;
-  const r = canvas.getBoundingClientRect();
-  canvas.width = r.width * dpr;
-  canvas.height = r.height * dpr;
+  const top = document.getElementById("toolbar").getBoundingClientRect().bottom;
+  const vw = (window.visualViewport ? visualViewport.width  : window.innerWidth);
+  const vh = (window.visualViewport ? visualViewport.height : window.innerHeight);
+  const w = Math.round(vw), h = Math.round(vh - top);
+  canvas.style.top = top + "px";
+  canvas.style.width = w + "px";
+  canvas.style.height = h + "px";
+  canvas.width = Math.round(w * dpr);
+  canvas.height = Math.round(h * dpr);
   ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
   redraw();
 }
@@ -153,19 +158,20 @@ function drawStroke(s) {
   ctx.restore();
 }
 function redraw() {
-  const r = canvas.getBoundingClientRect();
-  ctx.clearRect(0, 0, r.width, r.height);
+  const dpr = window.devicePixelRatio || 1;
+  ctx.clearRect(0, 0, canvas.width / dpr, canvas.height / dpr);
   for (const s of strokes) drawStroke(s);
 }
 
 // ---------- pointer input ----------
 function pos(ev) {
   const p = (ev.pointerType === "pen" && ev.pressure > 0) ? ev.pressure : 0.6;
-  let x = ev.offsetX, y = ev.offsetY;
-  if (typeof x !== "number" || (x === 0 && y === 0 && ev.clientX + ev.clientY > 0 && ev.target !== canvas)) {
-    const r = canvas.getBoundingClientRect();
-    x = ev.clientX - r.left; y = ev.clientY - r.top;
-  }
+  const r = canvas.getBoundingClientRect();
+  const dpr = window.devicePixelRatio || 1;
+  const sx = (canvas.width / dpr) / r.width;
+  const sy = (canvas.height / dpr) / r.height;
+  const x = (ev.clientX - r.left) * sx;
+  const y = (ev.clientY - r.top) * sy;
   return [+x.toFixed(1), +y.toFixed(1), +p.toFixed(2)];
 }
 function ensureSized() {
@@ -332,6 +338,7 @@ if (window.visualViewport) {
   visualViewport.addEventListener("resize", resize);
   visualViewport.addEventListener("scroll", resize);
 }
+window.addEventListener("orientationchange", () => { resize(); setTimeout(resize, 350); });
 resize();
 loadBoard();
 window.addEventListener("beforeunload", (e) => { if (dirty) e.preventDefault(); });
