@@ -160,12 +160,22 @@ function redraw() {
 
 // ---------- pointer input ----------
 function pos(ev) {
-  const r = canvas.getBoundingClientRect();
   const p = (ev.pointerType === "pen" && ev.pressure > 0) ? ev.pressure : 0.6;
-  return [+(ev.clientX - r.left).toFixed(1), +(ev.clientY - r.top).toFixed(1), +p.toFixed(2)];
+  let x = ev.offsetX, y = ev.offsetY;
+  if (typeof x !== "number" || (x === 0 && y === 0 && ev.clientX + ev.clientY > 0 && ev.target !== canvas)) {
+    const r = canvas.getBoundingClientRect();
+    x = ev.clientX - r.left; y = ev.clientY - r.top;
+  }
+  return [+x.toFixed(1), +y.toFixed(1), +p.toFixed(2)];
+}
+function ensureSized() {
+  const dpr = window.devicePixelRatio || 1;
+  const r = canvas.getBoundingClientRect();
+  if (Math.abs(canvas.width - r.width * dpr) > 1 || Math.abs(canvas.height - r.height * dpr) > 1) resize();
 }
 canvas.addEventListener("pointerdown", (ev) => {
-  if (ev.pointerType === "touch" && tool === "pen") return; // palm rejection: finger pans nothing, pencil draws
+  if (ev.pointerType === "touch" && tool === "pen") return;
+  ensureSized(); // palm rejection: finger pans nothing, pencil draws
   canvas.setPointerCapture(ev.pointerId);
   current = { color, width: baseWidth, eraser: tool === "eraser", pts: [pos(ev)] };
   ev.preventDefault();
@@ -315,6 +325,13 @@ async function loadBoard() {
 }
 
 // ---------- boot ----------
+document.addEventListener("gesturestart", (e) => e.preventDefault());
+document.addEventListener("gesturechange", (e) => e.preventDefault());
+document.addEventListener("dblclick", (e) => e.preventDefault());
+if (window.visualViewport) {
+  visualViewport.addEventListener("resize", resize);
+  visualViewport.addEventListener("scroll", resize);
+}
 resize();
 loadBoard();
 window.addEventListener("beforeunload", (e) => { if (dirty) e.preventDefault(); });
