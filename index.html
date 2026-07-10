@@ -102,10 +102,12 @@
     <option value="3.5" selected>Medium</option>
     <option value="7">Thick</option>
   </select>
+  <button id="zoomBtn" title="Reset zoom">100%</button>
+  <button id="centerBtn" title="Center content">⌖</button>
   <button id="undoBtn" title="Undo">↩︎</button>
   <button id="clearBtn" title="Clear">🗑</button>
   <div id="spacer"></div>
-  <span id="status">v11</span>
+  <span id="status">v12</span>
   <button id="syncBtn">Sync</button>
   <button id="fsBtn" title="Full screen">⛶</button>
   <button id="gearBtn" title="Settings">⚙️</button>
@@ -153,6 +155,14 @@ const ctx = canvas.getContext("2d");
 const statusEl = document.getElementById("status");
 const syncBtn = document.getElementById("syncBtn");
 
+// ---------- view transform (world <-> screen) ----------
+let view = { x: 0, y: 0, s: 1 };
+function applyView() {
+  const dpr = window.devicePixelRatio || 1;
+  ctx.setTransform(dpr * view.s, 0, 0, dpr * view.s,
+                   -view.x * dpr * view.s, -view.y * dpr * view.s);
+}
+
 // ---------- canvas sizing ----------
 function resize() {
   const dpr = window.devicePixelRatio || 1;
@@ -168,42 +178,46 @@ function resize() {
   canvas.style.height = h + "px";
   canvas.width = Math.round(w * dpr);
   canvas.height = Math.round(h * dpr);
-  ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+  applyView();
   redraw();
 }
 window.addEventListener("resize", resize);
 
 // ---------- drawing ----------
-function drawStroke(s) {
+function drawStroke(s, c) {
+  c = c || ctx;
   if (!s.pts.length) return;
-  ctx.save();
-  ctx.globalCompositeOperation = s.eraser ? "destination-out" : "source-over";
-  ctx.strokeStyle = s.color;
-  ctx.lineCap = "round";
-  ctx.lineJoin = "round";
+  c.save();
+  c.globalCompositeOperation = s.eraser ? "destination-out" : "source-over";
+  c.strokeStyle = s.color;
+  c.lineCap = "round";
+  c.lineJoin = "round";
   if (s.pts.length === 1) {
     const [x, y, p] = s.pts[0];
-    ctx.beginPath();
-    ctx.arc(x, y, (s.width * (0.4 + p)) / 2, 0, Math.PI * 2);
-    ctx.fillStyle = s.color;
-    ctx.fill();
-    ctx.restore();
+    c.beginPath();
+    c.arc(x, y, (s.width * (0.4 + p)) / 2, 0, Math.PI * 2);
+    c.fillStyle = s.color;
+    c.fill();
+    c.restore();
     return;
   }
   for (let i = 1; i < s.pts.length; i++) {
     const [x0, y0, p0] = s.pts[i - 1];
     const [x1, y1, p1] = s.pts[i];
-    ctx.beginPath();
-    ctx.lineWidth = s.eraser ? s.width * 6 : s.width * (0.4 + (p0 + p1) / 2);
-    ctx.moveTo(x0, y0);
-    ctx.lineTo(x1, y1);
-    ctx.stroke();
+    c.beginPath();
+    c.lineWidth = s.eraser ? s.width * 6 : s.width * (0.4 + (p0 + p1) / 2);
+    c.moveTo(x0, y0);
+    c.lineTo(x1, y1);
+    c.stroke();
   }
-  ctx.restore();
+  c.restore();
 }
 function redraw() {
-  const dpr = window.devicePixelRatio || 1;
-  ctx.clearRect(0, 0, canvas.width / dpr, canvas.height / dpr);
+  ctx.save();
+  ctx.setTransform(1, 0, 0, 1, 0, 0);
+  ctx.clearRect(0, 0, canvas.width, canvas.height);
+  ctx.restore();
+  applyView();
   for (const s of strokes) drawStroke(s);
 }
 
@@ -214,8 +228,8 @@ function pos(ev) {
   const dpr = window.devicePixelRatio || 1;
   const sx = (canvas.width / dpr) / r.width;
   const sy = (canvas.height / dpr) / r.height;
-  const x = (ev.clientX - r.left) * sx;
-  const y = (ev.clientY - r.top) * sy;
+  const x = ((ev.clientX - r.left) * sx) / view.s + view.x;
+  const y = ((ev.clientY - r.top) * sy) / view.s + view.y;
   return [+x.toFixed(1), +y.toFixed(1), +p.toFixed(2)];
 }
 let toastTimer = null;
@@ -236,8 +250,36 @@ function toggleTool() {
   setTool(tool === "pen" ? "eraser" : "pen");
   toast(tool === "pen" ? "✏️ Pen" : "◻️ Eraser");
 }
-canvas.addEventListener("touchstart", (e) => e.preventDefault(), { passive: false });
-canvas.addEventListener("touchmove", (e) => e.preventDefault(), { passive: false });
+let nav = null;
+function tpt(t) {
+  const r = canvas.getBoundingClientRect();
+  const sx = (canvas.width / (window.devicePixelRatio || 1)) / r.width;
+  return [(t.clientX - r.left) * sx, (t.clientY - r.top) * sx];
+}
+canvas.addEventListener("touchstart", (e) => {
+  e.preventDefault();
+  if (e.touches.length === 2) {
+    if (current) { current = null; redraw(); }
+    const [x0, y0] = tpt(e.touches[0]), [x1, y1] = tpt(e.touches[1]);
+    nav = { d0: Math.hypot(x1 - x0, y1 - y0), s0: view.s,
+            wx: ((x0 + x1) / 2) / view.s + view.x,
+            wy: ((y0 + y1) / 2) / view.s + view.y };
+  } else if (e.touches.length > 2) nav = null;
+}, { passive: false });
+canvas.addEventListener("touchmove", (e) => {
+  e.preventDefault();
+  if (nav && e.touches.length === 2) {
+    const [x0, y0] = tpt(e.touches[0]), [x1, y1] = tpt(e.touches[1]);
+    const d = Math.hypot(x1 - x0, y1 - y0);
+    if (nav.d0 > 30) view.s = Math.min(8, Math.max(0.2, nav.s0 * d / nav.d0));
+    view.x = nav.wx - ((x0 + x1) / 2) / view.s;
+    view.y = nav.wy - ((y0 + y1) / 2) / view.s;
+    applyView(); redraw(); updateZoomBtn();
+  }
+}, { passive: false });
+canvas.addEventListener("touchend", (e) => {
+  if (e.touches.length < 2) nav = null;
+}, { passive: true });
 canvas.addEventListener("contextmenu", (e) => e.preventDefault());
 document.addEventListener("selectstart", (e) => {
   if (e.target && e.target.tagName === "INPUT") return;
@@ -312,6 +354,42 @@ document.querySelectorAll(".swatch").forEach((el) => {
   };
 });
 document.getElementById("widthSel").onchange = (e) => { baseWidth = +e.target.value; };
+const zoomBtn = document.getElementById("zoomBtn");
+function updateZoomBtn() { zoomBtn.textContent = Math.round(view.s * 100) + "%"; }
+zoomBtn.onclick = () => {
+  const dpr = window.devicePixelRatio || 1;
+  const cw = canvas.width / dpr, ch = canvas.height / dpr;
+  const wx = view.x + cw / (2 * view.s), wy = view.y + ch / (2 * view.s);
+  view.s = 1;
+  view.x = wx - cw / 2; view.y = wy - ch / 2;
+  applyView(); redraw(); updateZoomBtn();
+};
+function contentBBox() {
+  let minx = Infinity, miny = Infinity, maxx = -Infinity, maxy = -Infinity, any = false;
+  for (const s of strokes) {
+    if (s.eraser) continue;
+    for (const p of s.pts) {
+      any = true;
+      if (p[0] < minx) minx = p[0];
+      if (p[0] > maxx) maxx = p[0];
+      if (p[1] < miny) miny = p[1];
+      if (p[1] > maxy) maxy = p[1];
+    }
+  }
+  return any ? { minx, miny, maxx, maxy } : null;
+}
+function centerContent() {
+  const bb = contentBBox();
+  const dpr = window.devicePixelRatio || 1;
+  const cw = canvas.width / dpr, ch = canvas.height / dpr;
+  if (!bb) { view.x = -cw / 2; view.y = -ch / 2; }
+  else {
+    view.x = (bb.minx + bb.maxx) / 2 - cw / (2 * view.s);
+    view.y = (bb.miny + bb.maxy) / 2 - ch / (2 * view.s);
+  }
+  applyView(); redraw(); updateZoomBtn();
+}
+document.getElementById("centerBtn").onclick = centerContent;
 document.getElementById("undoBtn").onclick = () => { strokes.pop(); redraw(); setDirty(true); };
 document.getElementById("clearBtn").onclick = () => {
   if (strokes.length && !confirm("Clear the whole board?")) return;
@@ -395,15 +473,33 @@ async function putFile(path, base64Content, sha, message) {
   return (await r.json()).content.sha;
 }
 function canvasPNG() {
-  // export on white background
+  const bb = contentBBox();
+  const dpr = window.devicePixelRatio || 1;
+  let x0, y0, w, h;
+  if (bb) {
+    const m = 40;
+    x0 = bb.minx - m; y0 = bb.miny - m;
+    w = bb.maxx - bb.minx + 2 * m; h = bb.maxy - bb.miny + 2 * m;
+  } else {
+    x0 = view.x; y0 = view.y;
+    w = canvas.width / dpr / view.s; h = canvas.height / dpr / view.s;
+  }
+  const scale = Math.min(2, 4096 / w, 4096 / h);
+  const W = Math.max(1, Math.round(w * scale)), H = Math.max(1, Math.round(h * scale));
+  const layer = document.createElement("canvas");
+  layer.width = W; layer.height = H;
+  const lctx = layer.getContext("2d");
+  lctx.setTransform(scale, 0, 0, scale, -x0 * scale, -y0 * scale);
+  for (const s of strokes) drawStroke(s, lctx);
   const out = document.createElement("canvas");
-  out.width = canvas.width; out.height = canvas.height;
+  out.width = W; out.height = H;
   const octx = out.getContext("2d");
   octx.fillStyle = "#fff";
-  octx.fillRect(0, 0, out.width, out.height);
-  octx.drawImage(canvas, 0, 0);
+  octx.fillRect(0, 0, W, H);
+  octx.drawImage(layer, 0, 0);
   return out.toDataURL("image/png").split(",")[1];
 }
+
 async function sync() {
   if (!cfg.token) { settings.classList.add("open"); return; }
   syncBtn.disabled = true;
@@ -442,7 +538,7 @@ async function loadBoard() {
     if (!r.ok) throw new Error(`load: ${r.status}`);
     const meta = await r.json();
     strokes = meta.strokes || [];
-    redraw();
+    centerContent();
     setDirty(false);
     setStatus(`loaded (${strokes.length} strokes)`);
   } catch (e) {
